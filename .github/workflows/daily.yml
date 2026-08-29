@@ -1,0 +1,53 @@
+name: Daily scholarship refresh
+
+on:
+  schedule:
+    # 06:00 UTC every day. GitHub cron is best-effort (may run a bit late).
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
+      MAX_PAGES_PER_RUN: "40"
+      FETCH_DELAY_SECONDS: "2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Match the local dev version so wheel availability is identical.
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # Gate the run: the tests need no network, DB or API keys, so a broken
+      # build is caught before it touches the real database.
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Run pipeline
+        run: python -m src.pipeline
+
+      # Regenerate the static page so GitHub Pages serves fresh data each day.
+      - name: Rebuild the site
+        run: python -m src.export_site
+
+      - name: Commit the refreshed site
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/index.html
+          git diff --staged --quiet || git commit -m "Refresh scholarship site [skip ci]"
+          git push

@@ -1,0 +1,196 @@
+# Scholarship sources. Adding a source = adding an entry here (no code changes).
+#
+# Fields:
+#   id            unique short slug
+#   name          human name
+#   region        Europe | UK | North America | Oceania  (for reporting)
+#   listing_urls  page(s) that list many scholarships (we discover detail links here)
+#   fetch_mode    html   -> plain HTTP (fast, default)
+#                 js     -> render with Playwright (only if the site needs JavaScript)
+#   link_filter   substring a detail link must contain to be considered (keeps noise out)
+#   hint          free-text hint passed to the AI to improve extraction for this source
+#   enabled       true/false
+#   discovery     how detail pages are found:
+#                   mode: links      (default) scrape <a href> from listing_urls
+#                   mode: json_feed  read the site's own data feed instead — required
+#                                    when the listing renders client-side, and better
+#                                    anyway because the feed gives us clean fields
+#                                    (title/subject/level) the AI then can't get wrong.
+#                 json_feed keys: feed_url, unwrap (taffy|assign|none), detail_url
+#                 template, seed (our_field: feed_field), map (our_field: {from, values,
+#                 all_means}), require_any (feed_field: [allowed values]).
+
+sources:
+  - id: daad
+    name: DAAD Scholarship Database
+    region: Europe
+    fetch_mode: html
+    listing_urls:
+      - "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/"
+    link_filter: "detail="
+    # The listing page is a client-side app: its HTML contains 0 detail links, and the
+    # whole catalogue is loaded from this file into a browser-side DB (TaffyDB).
+    # Reading it directly gets us all programmes in ONE request, with no JS rendering.
+    discovery:
+      mode: json_feed
+      feed_url: "https://www2.daad.de/bundles/daadstipendiendatenbanklsh/data/a/js/scholarships.js"
+      unwrap: taffy
+      detail_url: "https://www2.daad.de/deutschland/stipendium/datenbank/en/21148-scholarship-database/?detail={sapProgid}"
+      # Scope v1 is Bachelors + Masters: keep only programmes open to
+      # Undergraduates (1) or Graduates (3). Drops postdoc/faculty-only programmes.
+      require_any:
+        status: [1, 3]
+      # Feed entries that are not scholarships. Neither the feed nor the LLM flags
+      # these (10000381 "Important Information" is a search-portal stub that reads
+      # as a real programme), so they are excluded by hand.
+      exclude_ids:
+        - 10000381
+      seed:
+        # DAAD's programme id is permanent — used as the dedupe fingerprint so a
+        # reworded title on a later run updates the row instead of duplicating it.
+        external_id: sapProgid
+        title: nameEn
+        summary: introduction.en
+        # provider is deliberately NOT seeded: the feed's programmnameEn is just a
+        # copy of the title. The real funding organisation is on the detail page
+        # (the "Contact" block), so the AI reads it from there.
+      map:
+        degree_levels:
+          from: status
+          values:
+            1: bachelors
+            3: masters
+            4: phd
+        fields:
+          from: subjectGrps
+          # DAAD's 7 subject groups -> our controlled vocabulary. A programme
+          # carrying all 7 is open to every discipline.
+          all_means: any_field
+          values:
+            "A": [arts_humanities]
+            "B": [social_sciences, law, business_economics]
+            "C": [natural_sciences]
+            "D": [medicine_health]
+            "E": [agriculture]
+            "F": [engineering]
+            "G": [arts_humanities]
+    hint: >
+      German (DAAD) scholarship database. Most listings fund study or research IN
+      GERMANY. Many programmes are aimed at applicants from one specific country
+      (e.g. "Scholarships for students from Jordan") — that is the applicant's ORIGIN,
+      not the destination: country must still be Germany. Only report another country
+      when the funded study physically takes place there (DAAD's "In-Country" /
+      "In-Region" programmes). Language requirement is often a German level and/or
+      IELTS/TOEFL.
+    enabled: true
+
+  # --- Additional sources ------------------------------------------------------
+  #
+  # Findings from probing the original four (2026-08-29):
+  #   euraxess          returns 403 Forbidden to our bot           -> cannot use
+  #   australia_awards  robots.txt disallows the whole site        -> MUST NOT use
+  #   vanier            TLS chain fails, and it is PhD-only anyway -> out of scope v1
+  # They are kept below, disabled, with the reason recorded so nobody retries blindly.
+
+  # Chevening is ONE programme, not a database: scraping its site yields only
+  # navigation links, so it uses the static mode.
+  - id: chevening
+    name: Chevening Scholarships (UK)
+    region: UK
+    fetch_mode: html
+    discovery:
+      mode: static
+      urls:
+        - url: "https://www.chevening.org/scholarship/pakistan/"
+          country: UK
+          degree_levels: [masters]
+          funding_type: fully_funded
+    hint: >
+      UK government fully-funded Masters scholarships (one year, taught Masters).
+      The study destination is the UK. Funding covers tuition, a living stipend and
+      travel, so funding_type is fully_funded. English language requirements apply.
+    enabled: true
+
+  - id: commonwealth
+    name: Commonwealth Scholarships (UK)
+    region: UK
+    fetch_mode: html
+    listing_urls:
+      - "https://cscuk.fcdo.gov.uk/scholarships/"
+    link_filter: "cscuk.fcdo.gov.uk/scholarships/"
+    hint: >
+      UK Commonwealth scholarships and fellowships. Study destination is the UK.
+      Many are Masters or PhD for candidates from Commonwealth countries — the
+      applicant's home country is NOT the destination; country is the UK.
+    enabled: true
+
+  - id: holland_scholarship
+    name: Holland Scholarship (Netherlands)
+    region: Europe
+    fetch_mode: html
+    discovery:
+      mode: static
+      urls:
+        - url: "https://www.studyinnl.org/finances/holland-scholarship"
+          country: Netherlands
+    hint: >
+      Dutch government scholarship for non-EEA students at a Dutch university.
+      Study destination is the Netherlands. It is a one-off grant toward costs,
+      not full funding, so funding_type is usually partial.
+    enabled: true
+
+  - id: eiffel
+    name: Eiffel Excellence Scholarship (France)
+    region: Europe
+    fetch_mode: html
+    discovery:
+      mode: static
+      urls:
+        - url: "https://www.campusfrance.org/en/eiffel-scholarship-program-of-excellence"
+          country: France
+    hint: >
+      French government excellence scholarship (Campus France). Study destination is
+      France. Covers Masters and PhD level study.
+    enabled: true
+
+  # --- Disabled: probed and found unusable -------------------------------------
+
+  - id: euraxess
+    name: EURAXESS (Europe fellowships)
+    region: Europe
+    fetch_mode: html
+    listing_urls:
+      - "https://euraxess.ec.europa.eu/jobs/search?f%5B0%5D=type_of_contract%3AFellowship"
+    link_filter: "/jobs/"
+    hint: >
+      European research fellowships and funded positions. Country varies across
+      Europe — read it from the page; region is Europe.
+    # Returns HTTP 403 Forbidden to our User-Agent. Do not work around it by
+    # spoofing a browser; find an official feed/API instead.
+    enabled: false
+
+  - id: vanier
+    name: Vanier Canada Graduate Scholarships
+    region: North America
+    fetch_mode: html
+    listing_urls:
+      - "https://vanier.gc.ca/en/home-accueil.html"
+    link_filter: "vanier.gc.ca"
+    hint: >
+      Canadian government scholarships, typically doctoral (PhD). Country is Canada.
+    # TLS handshake fails ("unable to get local issuer certificate") AND the
+    # programme is PhD-only, which is outside scope v1 (Bachelors + Masters).
+    enabled: false
+
+  - id: australia_awards
+    name: Australia Awards
+    region: Oceania
+    fetch_mode: html
+    listing_urls:
+      - "https://www.australiaawards.gov.au/"
+    link_filter: "australiaawards.gov.au"
+    hint: >
+      Australian government scholarships for Bachelors/Masters. Country is Australia.
+    # robots.txt DISALLOWS crawling this site. Politeness is non-negotiable:
+    # do not enable. An Oceania source must come from somewhere that permits it.
+    enabled: false

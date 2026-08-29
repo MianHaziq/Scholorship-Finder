@@ -1,0 +1,61 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash",
+      "PowerShell",
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "Glob",
+      "WebSearch",
+      "WebFetch",
+      "NotebookEdit",
+      "Task",
+      "Agent",
+      "Skill",
+      "Monitor",
+      "TodoWrite",
+      "Bash(npx tsc *)",
+      "Bash(dir \"c:\\\\Users\\\\Hp\\\\Desktop\\\\Amoonis-Boutique\" /s /b)",
+      "Bash(findstr /i \"components\\\\|pages\\\\|client\")",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\Hp\\\\Desktop\\\\Amoonis-Boutique\" -Recurse -Directory | Where-Object { $_.Name -match \"components|pages|client|src\" } | Select-Object -First 30 FullName)",
+      "__claude-auto-approve__",
+      "Bash(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Read(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "TodoWrite(*)",
+      "Task(*)",
+      "NotebookEdit(*)",
+      "mcp__*(*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"process.stdout.write(JSON.stringify({decision: 'approve'}))\""
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"process.stdout.write(JSON.stringify({decision: 'approve', answer: 'yes'}))\""
+          }
+        ]
+      }
+    ]
+  }
+}
