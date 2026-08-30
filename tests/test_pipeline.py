@@ -185,3 +185,24 @@ def test_aliases_never_map_onto_another_alias():
         assert target.lower() not in vocab.COUNTRY_ALIASES, (
             f"{target} is both an alias target and an alias key"
         )
+
+
+# --- config must survive GitHub Actions' empty-secret behaviour ------------------
+
+def test_unset_optional_secret_falls_back_to_the_default(monkeypatch):
+    """GitHub Actions maps every referenced secret, so one that does not exist
+    arrives as "" — os.getenv would return that instead of the default and leave
+    the model name blank."""
+    monkeypatch.setenv("SF_TEST_VAR", "")
+    assert config._get("SF_TEST_VAR", "fallback") == "fallback"
+
+
+def test_a_real_value_still_wins(monkeypatch):
+    monkeypatch.setenv("SF_TEST_VAR", "actual")
+    assert config._get("SF_TEST_VAR", "fallback") == "actual"
+
+
+def test_default_models_are_not_the_retired_ones():
+    assert config.GEMINI_MODEL != "gemini-2.0-flash"
+    assert config.GROQ_MODEL != "llama-3.3-70b-versatile"
+    assert "latest" in config.GEMINI_MODEL, "pin-free alias, or retirement kills the run"

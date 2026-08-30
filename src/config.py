@@ -10,7 +10,10 @@ load_dotenv(ROOT / ".env")
 
 
 def _get(name: str, default: str | None = None, required: bool = False) -> str | None:
-    val = os.getenv(name, default)
+    # Treat an EMPTY variable as absent. GitHub Actions sets every mapped secret,
+    # so an unset optional secret arrives as "" — and os.getenv would then return
+    # that empty string instead of the default, leaving the model name blank.
+    val = os.getenv(name) or default
     if required and not val:
         raise RuntimeError(
             f"Missing required env var {name}. Copy .env.example to .env and fill it in."
@@ -20,9 +23,12 @@ def _get(name: str, default: str | None = None, required: bool = False) -> str |
 
 DATABASE_URL = _get("DATABASE_URL")
 GEMINI_API_KEY = _get("GEMINI_API_KEY")
-GEMINI_MODEL = _get("GEMINI_MODEL", "gemini-2.0-flash")
+# Working defaults, so the daily run succeeds even when the optional model
+# secrets are not set. Aliases, never pinned versions: both previous defaults
+# (gemini-2.0-flash, llama-3.3-70b-versatile) were retired and 404'd every call.
+GEMINI_MODEL = _get("GEMINI_MODEL", "gemini-flash-lite-latest")
 GROQ_API_KEY = _get("GROQ_API_KEY")
-GROQ_MODEL = _get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = _get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 FETCH_DELAY_SECONDS = float(_get("FETCH_DELAY_SECONDS", "2"))
 MAX_PAGES_PER_RUN = int(_get("MAX_PAGES_PER_RUN", "40"))
