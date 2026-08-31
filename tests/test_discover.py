@@ -134,10 +134,14 @@ class _Resp:
         pass
 
 
+    def __repr__(self):
+        return f"<_Resp {len(self.text)} chars>"
+
+
 @pytest.fixture
 def stub_feed(monkeypatch):
     def _stub(body):
-        monkeypatch.setattr(discover.httpx, "get", lambda *a, **k: _Resp(body))
+        monkeypatch.setattr(discover.fetch.httpx, "get", lambda *a, **k: _Resp(body))
     return _stub
 
 
@@ -185,12 +189,47 @@ def test_no_exclude_ids_keeps_everything_in_scope(stub_feed):
     assert len(discover.discover(SRC)) == 2
 
 
-def test_a_dead_feed_returns_no_candidates_instead_of_raising(stub_feed):
+def test_a_dead_feed_returns_no_candidates_instead_of_raising(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("connection refused")
-    stub_feed(FEED)
-    discover.httpx.get = boom
+    monkeypatch.setattr(discover.fetch.httpx, "get", boom)
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)  # no real backoff
     assert discover.discover(SRC) == []
+
+
+def test_a_feed_blip_is_retried_rather_than_losing_the_whole_source(monkeypatch):
+    """One transient failure must not wipe out every programme behind the feed —
+    a CI run once collected 9 pages instead of 111 for exactly this reason."""
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("connection reset")
+        return _Resp(FEED)
+
+    monkeypatch.setattr(discover.fetch.httpx, "get", flaky)
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)
+    assert len(discover.discover(SRC)) == 2
+    assert calls["n"] == 2, "should have retried exactly once"
+
+
+def test_an_http_status_error_is_not_retried(monkeypatch):
+    """A 404 is a real answer; retrying it just wastes requests."""
+    import httpx as _httpx
+    calls = {"n": 0}
+
+    def gone(*a, **k):
+        calls["n"] += 1
+        raise _httpx.HTTPStatusError(
+            "404", request=_httpx.Request("GET", "https://e.org"),
+            response=_httpx.Response(404),
+        )
+
+    monkeypatch.setattr(discover.fetch.httpx, "get", gone)
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)
+    assert discover.discover(SRC) == []
+    assert calls["n"] == 1, "status errors must not be retried"
 
 
 def test_links_mode_is_the_default(monkeypatch):

@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    timeout-minutes: 30
+    # 40 pages at ~27s each on a runner, plus retries. 30 was too close.
+    timeout-minutes: 45
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -19,7 +20,9 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
       MAX_PAGES_PER_RUN: "40"
-      FETCH_DELAY_SECONDS: "2"
+      # Gentler than local: a shared GitHub runner IP is far more likely to be
+      # rate-limited, and run #13 saw 13 errors across 40 pages.
+      FETCH_DELAY_SECONDS: "4"
     steps:
       - uses: actions/checkout@v4
 

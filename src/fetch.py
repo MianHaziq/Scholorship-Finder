@@ -93,6 +93,37 @@ def _get_html_js(url: str) -> str | None:
         return None
 
 
+def get_text(url: str, timeout: int = 60, attempts: int = 3) -> str | None:
+    """Fetch a URL's raw body, retrying transport errors with a growing backoff.
+
+    For data feeds. A feed is a single point of failure for its whole source — one
+    blip and every programme behind it disappears from that run, which is how a
+    GitHub Actions run once collected 9 pages instead of 111 while still exiting
+    green. So it gets MORE retries than an individual detail page, not fewer.
+    HTTP status errors are still not retried: a 404 is a real answer.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = httpx.get(
+                url, headers={"User-Agent": USER_AGENT}, timeout=timeout,
+                follow_redirects=True,
+            )
+            resp.raise_for_status()
+            return resp.text
+        except httpx.HTTPStatusError as e:
+            print(f"  [feed error] {url}: {e}")
+            return None
+        except Exception as e:  # noqa: BLE001 - transport/DNS; worth retrying
+            if attempt < attempts:
+                wait = 3 * attempt
+                print(f"  [feed retry {attempt}/{attempts - 1}] {e} — waiting {wait}s")
+                time.sleep(wait)
+                continue
+            print(f"  [feed error] {url}: {e}")
+            return None
+    return None
+
+
 def find_detail_links(listing_html: str, base_url: str, link_filter: str | None) -> list[str]:
     """Collect candidate scholarship detail URLs from a listing page."""
     tree = HTMLParser(listing_html)

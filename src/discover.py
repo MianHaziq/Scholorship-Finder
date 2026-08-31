@@ -177,14 +177,12 @@ def _from_json_feed(src: dict) -> list[Candidate]:
     cfg = src["discovery"]
     url = cfg["feed_url"]
 
+    body = fetch.get_text(url)      # retries transport blips; see fetch.get_text
+    if body is None:
+        return []
     try:
-        resp = httpx.get(
-            url, headers={"User-Agent": fetch.USER_AGENT}, timeout=60,
-            follow_redirects=True,
-        )
-        resp.raise_for_status()
-        records = _unwrap(resp.text, cfg.get("unwrap"))
-    except Exception as e:  # noqa: BLE001 - a dead feed shouldn't kill the whole run
+        records = _unwrap(body, cfg.get("unwrap"))
+    except Exception as e:  # noqa: BLE001 - a malformed feed shouldn't kill the run
         print(f"  [feed error] {url}: {e}")
         return []
 
