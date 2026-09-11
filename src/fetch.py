@@ -94,33 +94,42 @@ def _get_html_js(url: str) -> str | None:
 
 
 def get_text(url: str, timeout: int = 60, attempts: int = 3) -> str | None:
-    """Fetch a URL's raw body, retrying transport errors with a growing backoff.
+    """Fetch a URL's raw body, retrying transient failures with a growing backoff.
 
     For data feeds. A feed is a single point of failure for its whole source — one
-    blip and every programme behind it disappears from that run, which is how a
-    GitHub Actions run once collected 9 pages instead of 111 while still exiting
-    green. So it gets MORE retries than an individual detail page, not fewer.
-    HTTP status errors are still not retried: a 404 is a real answer.
+    blip and every programme behind it disappears from that run. DAAD's feed failed
+    on 6 of 8 daily CI runs, which showed up only as "no records from: daad".
+
+    Retries transport errors AND the status codes that mean "try again" (429 rate
+    limit, 5xx server-side). A shared GitHub runner IP is far likelier to be rate
+    limited than a home connection. A 404/403 is a real answer and is not retried —
+    hammering a site that is deliberately refusing us would be rude.
     """
+    RETRY_STATUS = {408, 425, 429, 500, 502, 503, 504}
     for attempt in range(1, attempts + 1):
+        last = None
         try:
             resp = httpx.get(
                 url, headers={"User-Agent": USER_AGENT}, timeout=timeout,
                 follow_redirects=True,
             )
-            resp.raise_for_status()
-            return resp.text
+            if resp.status_code in RETRY_STATUS and attempt < attempts:
+                last = f"HTTP {resp.status_code}"
+            else:
+                resp.raise_for_status()
+                return resp.text
         except httpx.HTTPStatusError as e:
-            print(f"  [feed error] {url}: {e}")
+            print(f"  [feed error] {url}: HTTP {e.response.status_code} (not retried)")
             return None
         except Exception as e:  # noqa: BLE001 - transport/DNS; worth retrying
-            if attempt < attempts:
-                wait = 3 * attempt
-                print(f"  [feed retry {attempt}/{attempts - 1}] {e} — waiting {wait}s")
-                time.sleep(wait)
-                continue
-            print(f"  [feed error] {url}: {e}")
-            return None
+            last = f"{type(e).__name__}: {e}"
+            if attempt >= attempts:
+                print(f"  [feed error] {url}: {last}")
+                return None
+        wait = 5 * attempt
+        print(f"  [feed retry {attempt}/{attempts - 1}] {last} — waiting {wait}s")
+        time.sleep(wait)
+    print(f"  [feed error] {url}: gave up after {attempts} attempts")
     return None
 
 

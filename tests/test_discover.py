@@ -127,8 +127,9 @@ SRC = {
 
 
 class _Resp:
-    def __init__(self, text):
+    def __init__(self, text, status_code=200):
         self.text = text
+        self.status_code = status_code
 
     def raise_for_status(self):
         pass
@@ -297,3 +298,51 @@ def test_every_candidate_gets_a_stable_identity(stub_feed):
 def test_feed_id_is_not_overwritten_by_the_url(stub_feed):
     stub_feed(FEED)
     assert discover.discover(SRC)[0].seed["external_id"] == 111
+
+
+def test_a_rate_limited_feed_is_retried(monkeypatch):
+    """DAAD's feed failed 6 of 8 CI runs. A shared runner IP gets rate limited far
+    more than a home connection, so 429/5xx must be retried, not given up on."""
+    seq = [_Resp("", 429), _Resp("", 503), _Resp(FEED, 200)]
+    monkeypatch.setattr(discover.fetch.httpx, "get", lambda *a, **k: seq.pop(0))
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)
+    assert len(discover.discover(SRC)) == 2
+    assert seq == [], "should have consumed both retries"
+
+
+def test_a_forbidden_feed_is_not_retried(monkeypatch):
+    """403/404 is a real answer; hammering a site that is refusing us is rude."""
+    import httpx as _httpx
+    calls = {"n": 0}
+
+    class Forbidden:
+        status_code = 403
+        text = ""
+
+        def raise_for_status(self):
+            raise _httpx.HTTPStatusError(
+                "403", request=_httpx.Request("GET", "https://e.org"),
+                response=_httpx.Response(403),
+            )
+
+    def get(*a, **k):
+        calls["n"] += 1
+        return Forbidden()
+
+    monkeypatch.setattr(discover.fetch.httpx, "get", get)
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)
+    assert discover.discover(SRC) == []
+    assert calls["n"] == 1, "a refusal must not be retried"
+
+
+def test_feed_gives_up_after_the_attempt_limit(monkeypatch):
+    calls = {"n": 0}
+
+    def always_429(*a, **k):
+        calls["n"] += 1
+        return _Resp("", 429)
+
+    monkeypatch.setattr(discover.fetch.httpx, "get", always_429)
+    monkeypatch.setattr(discover.fetch.time, "sleep", lambda s: None)
+    assert discover.discover(SRC) == []
+    assert calls["n"] == 3, "bounded retries, not an infinite loop"
