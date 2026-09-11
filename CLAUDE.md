@@ -219,10 +219,8 @@ free of real values.
 
 - **Phase 0 (foundation): done.** Neon live (PostgreSQL 18.6); `scholarships`
   (25 cols, 8 indexes) + `run_log` applied. Venv on 3.12 with all deps as wheels.
-- **Phase 1 (DAAD vertical slice): in progress.** Discovery, extract-merge, upsert,
-  dedupe and query all verified end-to-end with a stubbed LLM in a rolled-back
-  transaction. Real LLM keys are now in `.env`; first live collection is the current step.
-- **Phase 2 (more sources): in progress.** Enabled and verified live: `daad` (102),
+- **Phase 1 (DAAD vertical slice): done.** 102 in-scope programmes collected.
+- **Phase 2 (more sources): done for Europe/UK.** Enabled and verified live: `daad` (102),
   `chevening`, `commonwealth` (6), `holland_scholarship`, `eiffel`.
   Probed and left disabled **with the reason recorded in `sources.yaml`** —
   `euraxess` (HTTP 403 to our UA), `australia_awards` (**robots.txt disallows —
@@ -233,6 +231,24 @@ free of real values.
 - **Phase 4 (query convenience): done.** `query.SAVED_QUERIES` presets +
   `--saved` / `--list-saved`, plus CSV export.
 - **Phase 5 (frontend): done.** `python -m src.export_site` -> `site/index.html`.
+  Live at https://mianhaziq.github.io/Scholorship-Finder/ (root `index.html` redirects
+  to `site/`; without it the Pages root renders README.md and looks broken).
+
+### Known gap: no Canada or Oceania source
+
+Scope v1 names Canada + Australia, and both have **zero** rows. Australia Awards is
+robots-disallowed and Vanier is PhD-only/TLS-broken, so replacements are needed —
+this is the largest outstanding piece of work.
+
+### DAAD's feed is unreliable from CI — watch this
+
+The daily run has worked unattended since 2026-08-31, but DAAD returned nothing on 6 of
+the first 8 runs (9 pages collected instead of 111). It surfaces **only** as
+`no records from: daad` in `run_log.notes`; the job still exits green, by design.
+`fetch.get_text()` now retries 429/408/5xx as well as transport errors, and prints the
+status code. If it keeps failing, read that code from the Actions log before changing
+anything: a persistent 403 means DAAD is blocking GitHub's IP range, which retries will
+not fix and must not be worked around by spoofing a browser User-Agent.
 
 ### The frontend must not hold a DB credential
 
@@ -245,7 +261,7 @@ or "UK" and "United Kingdom" appear as two separate entries in every filter.
 
 ## Tests
 
-`.venv\Scripts\python.exe -m pytest` — 153 tests, ~1s, no network/DB/LLM (the feed,
+`.venv\Scripts\python.exe -m pytest` — 161 tests, ~1s, no network/DB/LLM (the feed,
 fetch and `llm.complete_json` are all stubbed). They exist because every bug in the
 "do not regress this" sections above reached the real database once. Each such
 section has a matching test; verified they fail against the old implementations.

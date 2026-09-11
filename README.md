@@ -114,6 +114,9 @@ before spending LLM calls, and gives a permanent id used as the dedupe fingerpri
 
 ## The web page (phase 5)
 
+**Live:** https://mianhaziq.github.io/Scholorship-Finder/ — updated automatically every day.
+
+
 ```bash
 python -m src.export_site          # -> site/index.html
 ```
@@ -139,7 +142,7 @@ and the page follows your light/dark setting.
 .venv\Scripts\python.exe -m pytest
 ```
 
-153 tests, about a second. They make no network, database or LLM calls — the data feed,
+161 tests, about a second. They make no network, database or LLM calls — the data feed,
 the fetcher and the model are all stubbed — so they are safe to run anytime and cost
 nothing. They mainly lock down bugs that previously reached the real database:
 invented deadlines, duplicate rows, unreachable catalogue pages, and dropped
